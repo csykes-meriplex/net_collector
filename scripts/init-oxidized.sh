@@ -23,7 +23,7 @@ fi
 cd "$ROOT"
 
 echo "Waiting for LibreNMS to be healthy..."
-until docker compose exec -T librenms curl -sf http://localhost:8000/api/v0/system > /dev/null 2>&1; do
+until docker compose exec -T librenms curl -sf http://localhost:8000/login > /dev/null 2>&1; do
   printf "."
   sleep 5
 done
