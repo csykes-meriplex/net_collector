@@ -1,0 +1,57 @@
+---
+username: admin
+password: admin
+model: ios
+interval: 3600
+use_syslog: false
+debug: false
+threads: 30
+timeout: 60
+retries: 3
+prompt: !ruby/regexp /^([\w.@()\/-]+[#>]\s*)$/
+
+rest: 0.0.0.0:8888
+
+# Oxidized pulls its device list directly from LibreNMS via the API.
+# After completing setup step 3 (generate LibreNMS API token), replace
+# LIBRENMS_API_TOKEN_PLACEHOLDER below with the actual token and restart
+# the oxidized container.
+source:
+  default: http
+  http:
+    url: http://librenms:8000/api/v0/oxidized
+    scheme: http
+    map:
+      name: hostname
+      model: os
+      username: username
+      password: password
+    headers:
+      X-Auth-Token: "LIBRENMS_API_TOKEN_PLACEHOLDER"
+
+output:
+  default: git
+  git:
+    user: Oxidized
+    email: oxidized@net-collector
+    repo: "/home/oxidized/.config/oxidized/configs.git"
+
+# Maps LibreNMS OS names → Oxidized model names.
+# Add entries here as you onboard new device types.
+model_map:
+  cisco: ios
+  cisco-xe: iosxe
+  cisco-xr: iosxr
+  cisco-nx: nxos
+  juniper: junos
+  junos: junos
+  arista_eos: eos
+  arista: eos
+  panos: panos
+  fortios: fortios
+  fortigate: fortios
+  arubaos: arubaos
+  hp_procurve: procurve
+  routeros: routeros
+  edgeswitch: edgeswitch
+  tplink-jet: tplink

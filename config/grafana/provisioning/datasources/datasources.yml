@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB-LibreNMS
+    type: influxdb
+    uid: influxdb-librenms
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: ${INFLUXDB_ORG}
+      defaultBucket: librenms
+      tlsSkipVerify: true
+    secureJsonData:
+      token: ${INFLUXDB_ADMIN_TOKEN}
+    isDefault: true

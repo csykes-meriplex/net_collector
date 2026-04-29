@@ -1,0 +1,344 @@
+name: net-collector
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  mariadb_data:
+  librenms_data:
+  librenms_rrd:
+  oxidized_data:
+  influxdb_data:
+  grafana_data:
+  clickhouse_data:
+  redpanda_data:
+
+services:
+
+  # ── Traefik (TLS termination, self-signed) ─────────────────────────────
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3000:3000"    # Grafana HTTPS
+      - "8080:8080"    # Akvorado console HTTPS
+      - "8888:8888"    # Oxidized HTTPS
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - backend
+
+  # ── MariaDB ────────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:11
+    container_name: mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: librenms
+      MYSQL_USER: librenms
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    command:
+      - --innodb-file-per-table=1
+      - --lower-case-table-names=0
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - backend
+
+  # ── LibreNMS (web + API) ───────────────────────────────────────────────
+  librenms:
+    image: librenms/librenms:latest
+    container_name: librenms
+    hostname: librenms
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file: .env
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: 1000
+      PGID: 1000
+      DB_HOST: mariadb
+      DB_NAME: librenms
+      DB_USER: librenms
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LIBRENMS_SNMP_COMMUNITY: ${SNMP_COMMUNITY:-public}
+      MEMCACHED_ENABLE: "false"
+      OXIDIZED_URL: http://oxidized:8888
+    volumes:
+      - librenms_data:/data
+      - librenms_rrd:/opt/librenms/rrd
+      - ./config/librenms/influxdb.php:/data/config/influxdb.php:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v0/system"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.librenms.entrypoints=websecure
+      - traefik.http.routers.librenms.rule=PathPrefix(`/`)
+      - traefik.http.routers.librenms.tls=true
+      - traefik.http.services.librenms.loadbalancer.server.port=8000
+
+  # ── LibreNMS SNMP Trap receiver ───────────────────────────────────────
+  librenms-snmptrapd:
+    image: librenms/librenms:latest
+    container_name: librenms-snmptrapd
+    hostname: librenms-snmptrapd
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      librenms:
+        condition: service_healthy
+    ports:
+      - "162:162/udp"    # SNMP traps
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: 1000
+      PGID: 1000
+      DB_HOST: mariadb
+      DB_NAME: librenms
+      DB_USER: librenms
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SIDECAR_SNMPTRAPD: 1
+    volumes:
+      - librenms_data:/data
+    networks:
+      - backend
+
+  # ── LibreNMS Syslog receiver ───────────────────────────────────────────
+  librenms-syslogng:
+    image: librenms/librenms:latest
+    container_name: librenms-syslogng
+    hostname: librenms-syslogng
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      librenms:
+        condition: service_healthy
+    ports:
+      - "514:514/udp"    # Syslog UDP
+      - "514:514/tcp"    # Syslog TCP
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: 1000
+      PGID: 1000
+      DB_HOST: mariadb
+      DB_NAME: librenms
+      DB_USER: librenms
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SIDECAR_SYSLOGNG: 1
+    volumes:
+      - librenms_data:/data
+    networks:
+      - backend
+
+  # ── LibreNMS Dispatcher (polling workers) ──────────────────────────────
+  # Scale POLLER_THREADS in .env for large environments.
+  # For very large deployments, run multiple dispatcher replicas on separate
+  # hosts pointing at the same DB — see LibreNMS distributed poller docs.
+  librenms-dispatcher:
+    image: librenms/librenms:latest
+    container_name: librenms-dispatcher
+    hostname: librenms-dispatcher
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      librenms:
+        condition: service_started
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: 1000
+      PGID: 1000
+      DB_HOST: mariadb
+      DB_NAME: librenms
+      DB_USER: librenms
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SIDECAR_DISPATCHER: 1
+      DISPATCHER_NODE_ID: dispatcher1
+      LIBRENMS_POLLER_THREADS: ${POLLER_THREADS:-24}
+    volumes:
+      - librenms_data:/data
+      - librenms_rrd:/opt/librenms/rrd
+    networks:
+      - backend
+
+  # ── Oxidized (config backup) ───────────────────────────────────────────
+  # Device list sourced from LibreNMS API.
+  # See scripts/setup.sh output for the post-startup token step.
+  oxidized:
+    image: oxidized/oxidized:latest
+    container_name: oxidized
+    restart: unless-stopped
+    depends_on:
+      - librenms
+    environment:
+      CONFIG_RELOAD_INTERVAL: 600
+    volumes:
+      - oxidized_data:/home/oxidized/.config/oxidized
+      - ./config/oxidized/config:/home/oxidized/.config/oxidized/config:ro
+    networks:
+      - backend
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.oxidized.entrypoints=oxidized
+      - traefik.http.routers.oxidized.rule=PathPrefix(`/`)
+      - traefik.http.routers.oxidized.tls=true
+      - traefik.http.services.oxidized.loadbalancer.server.port=8888
+
+  # ── InfluxDB v2 (LibreNMS metrics) ────────────────────────────────────
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-netcollector}
+      DOCKER_INFLUXDB_INIT_BUCKET: librenms
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    networks:
+      - backend
+
+  # ── Redpanda (Kafka-compatible broker for Akvorado) ────────────────────
+  # Single container — no Zookeeper needed.
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── ClickHouse (Akvorado flow storage) ────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: flows
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Akvorado (sFlow/NetFlow/IPFIX collector + console) ─────────────────
+  # Console UI: https://host:8080/
+  # Grafana datasource plugin: install "akvorado-datasource" in Grafana,
+  # then point it at https://host:8080/ — gives flow dashboards alongside
+  # LibreNMS dashboards in a single Grafana instance.
+  akvorado:
+    image: ghcr.io/akvorado/akvorado:latest
+    container_name: akvorado
+    restart: unless-stopped
+    command: orchestrate /etc/akvorado/akvorado.yaml
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "6343:6343/udp"    # sFlow
+      - "2055:2055/udp"    # NetFlow v5/v9 / IPFIX
+    volumes:
+      - ./config/akvorado/akvorado.yaml:/etc/akvorado/akvorado.yaml:ro
+    networks:
+      - backend
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.akvorado.entrypoints=akvorado
+      - traefik.http.routers.akvorado.rule=PathPrefix(`/`)
+      - traefik.http.routers.akvorado.tls=true
+      - traefik.http.services.akvorado.loadbalancer.server.port=8080
+
+  # ── Grafana (unified dashboards) ───────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # akvorado-datasource plugin — connects to Akvorado console API
+      GF_INSTALL_PLUGINS: grafana-worldmap-panel,akvorado-datasource
+      INFLUXDB_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-netcollector}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - backend
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.grafana.entrypoints=grafana
+      - traefik.http.routers.grafana.rule=PathPrefix(`/`)
+      - traefik.http.routers.grafana.tls=true
+      - traefik.http.services.grafana.loadbalancer.server.port=3000

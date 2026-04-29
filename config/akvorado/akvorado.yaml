@@ -1,0 +1,53 @@
+# Akvorado all-in-one config — runs inlet, orchestrator, and console
+# in a single container via: akvorado orchestrate /etc/akvorado/akvorado.yaml
+#
+# Full reference: https://demo.akvorado.net/docs/configuration
+
+reporting:
+  logging:
+    level: info
+
+http:
+  listen: 0.0.0.0:8080
+
+# ── Kafka (Redpanda) ───────────────────────────────────────────────────
+kafka:
+  topic: flows
+  brokers:
+    - redpanda:9092
+  version: "3.3"
+
+# ── ClickHouse ─────────────────────────────────────────────────────────
+clickhouse:
+  servers:
+    - clickhouse:9000
+  database: flows
+
+# ── Flow inlet ─────────────────────────────────────────────────────────
+inlet:
+  flow:
+    inputs:
+      - type: udp
+        listen: 0.0.0.0:6343
+        decoder: sflow
+      - type: udp
+        listen: 0.0.0.0:2055
+        decoder: netflow
+  # Optional: enrich flows with interface descriptions via SNMP.
+  # Useful for "pretty" reports — adds port names instead of ifIndex numbers.
+  # Uncomment and adjust communities to enable.
+  # metadata:
+  #   cache-duration: 4h
+  #   providers:
+  #     - type: snmp
+  #       communities:
+  #         - public
+
+# ── Console ────────────────────────────────────────────────────────────
+console:
+  default-visualize-options:
+    start: -1d
+    end: now
+    dimensions:
+      - SrcAS
+      - DstAS

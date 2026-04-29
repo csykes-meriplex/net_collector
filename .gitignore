@@ -1,0 +1,3 @@
+.env
+config/oxidized/config.local
+data/
