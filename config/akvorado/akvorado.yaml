@@ -3,10 +3,6 @@
 #
 # Full reference: https://demo.akvorado.net/docs/configuration
 
-reporting:
-  logging:
-    level: info
-
 http:
   listen: 0.0.0.0:8080
 
