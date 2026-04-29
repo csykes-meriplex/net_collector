@@ -45,6 +45,21 @@ set_secret OXIDIZED_API_TOKEN 40
 set_secret GRAFANA_ADMIN_PASSWORD 24
 
 HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "YOUR_HOST_IP")
+
+echo ""
+echo "Generating TLS certificate..."
+mkdir -p "$ROOT/config/nginx/ssl"
+if [ ! -f "$ROOT/config/nginx/ssl/cert.pem" ]; then
+  openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+    -keyout "$ROOT/config/nginx/ssl/key.pem" \
+    -out "$ROOT/config/nginx/ssl/cert.pem" \
+    -subj "/CN=net-collector" \
+    -addext "subjectAltName=IP:${HOST_IP},IP:127.0.0.1" \
+    2>/dev/null
+  echo "  Generated: SSL certificate for ${HOST_IP}"
+else
+  echo "  Exists:    SSL certificate (skipped)"
+fi
 GRAFANA_PASS=$(grep "^GRAFANA_ADMIN_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2-)
 
 echo ""
