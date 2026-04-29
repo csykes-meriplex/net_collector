@@ -37,6 +37,7 @@ set_secret() {
 
 echo ""
 echo "Generating secrets..."
+set_secret LIBRENMS_ADMIN_PASSWORD 24
 set_secret DB_PASSWORD 32
 set_secret DB_ROOT_PASSWORD 32
 set_secret INFLUXDB_ADMIN_PASSWORD 32
@@ -60,6 +61,7 @@ if [ ! -f "$ROOT/config/nginx/ssl/cert.pem" ]; then
 else
   echo "  Exists:    SSL certificate (skipped)"
 fi
+LIBRENMS_PASS=$(grep "^LIBRENMS_ADMIN_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2-)
 GRAFANA_PASS=$(grep "^GRAFANA_ADMIN_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2-)
 
 echo ""
@@ -79,7 +81,7 @@ echo "  sFlow     → ${HOST_IP}:6343/udp"
 echo "  NetFlow   → ${HOST_IP}:2055/udp"
 echo ""
 echo "Credentials:"
-echo "  LibreNMS  admin / admin  (change immediately)"
+echo "  LibreNMS  admin / ${LIBRENMS_PASS}"
 echo "  Grafana   admin / ${GRAFANA_PASS}"
 echo ""
 echo "──────────────────────────────────────────────────────"

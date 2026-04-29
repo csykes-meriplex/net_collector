@@ -196,6 +196,26 @@ services:
     networks:
       - backend
 
+  # ── LibreNMS user init (creates admin user on first boot) ────────────
+  librenms-user-init:
+    image: librenms/librenms:latest
+    container_name: librenms-user-init
+    restart: "no"
+    depends_on:
+      librenms:
+        condition: service_healthy
+    env_file: .env
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        lnms user:add --role admin --password "$$LIBRENMS_ADMIN_PASSWORD" admin --no-interaction 2>/dev/null \
+          && echo "Admin user created." \
+          || echo "Admin user already exists, skipping."
+    volumes:
+      - librenms_data:/data
+    networks:
+      - backend
+
   # ── LibreNMS init (runs once, wires Oxidized API token) ───────────────
   # Waits for LibreNMS healthy, inserts OXIDIZED_API_TOKEN into the DB,
   # patches config/oxidized/config, then exits. INSERT IGNORE makes it
@@ -299,10 +319,10 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Akvorado (sFlow/NetFlow/IPFIX collector + console) ─────────────────
-  akvorado:
+  # ── Akvorado orchestrator (manages ClickHouse schema + Kafka topics) ────
+  akvorado-orchestrator:
     image: ghcr.io/akvorado/akvorado:latest
-    container_name: akvorado
+    container_name: akvorado-orchestrator
     restart: unless-stopped
     command: orchestrator /etc/akvorado/akvorado.yaml
     depends_on:
@@ -310,9 +330,35 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+    volumes:
+      - ./config/akvorado/akvorado.yaml:/etc/akvorado/akvorado.yaml:ro
+    networks:
+      - backend
+
+  # ── Akvorado inlet (receives sFlow / NetFlow / IPFIX) ─────────────────
+  akvorado-inlet:
+    image: ghcr.io/akvorado/akvorado:latest
+    container_name: akvorado-inlet
+    restart: unless-stopped
+    command: inlet /etc/akvorado/akvorado.yaml
+    depends_on:
+      - akvorado-orchestrator
     ports:
-      - "6343:6343/udp"    # sFlow
-      - "2055:2055/udp"    # NetFlow v5/v9 / IPFIX
+      - "6343:6343/udp"
+      - "2055:2055/udp"
+    volumes:
+      - ./config/akvorado/akvorado.yaml:/etc/akvorado/akvorado.yaml:ro
+    networks:
+      - backend
+
+  # ── Akvorado console (web UI) ─────────────────────────────────────────
+  akvorado-console:
+    image: ghcr.io/akvorado/akvorado:latest
+    container_name: akvorado-console
+    restart: unless-stopped
+    command: console /etc/akvorado/akvorado.yaml
+    depends_on:
+      - akvorado-orchestrator
     volumes:
       - ./config/akvorado/akvorado.yaml:/etc/akvorado/akvorado.yaml:ro
     networks:
