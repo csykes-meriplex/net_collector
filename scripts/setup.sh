@@ -41,6 +41,7 @@ set_secret DB_PASSWORD 32
 set_secret DB_ROOT_PASSWORD 32
 set_secret INFLUXDB_ADMIN_PASSWORD 32
 set_secret INFLUXDB_ADMIN_TOKEN 64
+set_secret OXIDIZED_API_TOKEN 40
 set_secret GRAFANA_ADMIN_PASSWORD 24
 
 HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "YOUR_HOST_IP")
@@ -67,13 +68,11 @@ echo "  LibreNMS  admin / admin  (change immediately)"
 echo "  Grafana   admin / ${GRAFANA_PASS}"
 echo ""
 echo "──────────────────────────────────────────────────────"
-echo "POST-STARTUP STEPS:"
+echo "Start the stack — everything is fully automated:"
+echo "  sudo docker compose up -d"
 echo ""
-echo "After 'docker compose up -d', run:"
-echo "  bash scripts/init-oxidized.sh"
-echo ""
-echo "That script waits for LibreNMS to be ready, generates"
-echo "an API token, injects it into Oxidized, and restarts it."
+echo "The librenms-init container will automatically wire"
+echo "the Oxidized API token once LibreNMS is healthy."
 echo ""
 echo "Grafana → Connections → Akvorado datasource"
 echo "  URL: https://${HOST_IP}:8080/"

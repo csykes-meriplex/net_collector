@@ -202,15 +202,41 @@ services:
     networks:
       - backend
 
+  # ── LibreNMS init (runs once, wires Oxidized API token) ───────────────
+  # Waits for LibreNMS healthy, inserts OXIDIZED_API_TOKEN into the DB,
+  # patches config/oxidized/config, then exits. INSERT IGNORE makes it
+  # safe to re-run on stack restarts.
+  librenms-init:
+    image: mariadb:11
+    container_name: librenms-init
+    restart: "no"
+    depends_on:
+      librenms:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - ./config/oxidized:/oxidized-config
+    command:
+      - bash
+      - -c
+      - |
+        mysql -h mariadb -u librenms -p"$$DB_PASSWORD" librenms \
+          -e "INSERT IGNORE INTO api_tokens (user_id, token_hash, description, disabled)
+              VALUES (1, '$$OXIDIZED_API_TOKEN', 'oxidized', 0);" && \
+        sed -i "s|LIBRENMS_API_TOKEN_PLACEHOLDER|$$OXIDIZED_API_TOKEN|g" \
+          /oxidized-config/config && \
+        echo "Oxidized API token configured."
+    networks:
+      - backend
+
   # ── Oxidized (config backup) ───────────────────────────────────────────
-  # Device list sourced from LibreNMS API.
-  # See scripts/setup.sh output for the post-startup token step.
   oxidized:
     image: oxidized/oxidized:latest
     container_name: oxidized
     restart: unless-stopped
     depends_on:
-      - librenms
+      librenms-init:
+        condition: service_completed_successfully
     environment:
       CONFIG_RELOAD_INTERVAL: 600
     volumes:
