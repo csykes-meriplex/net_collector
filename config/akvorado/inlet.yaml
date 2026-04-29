@@ -1,0 +1,18 @@
+http:
+  listen: 0.0.0.0:8080
+
+kafka:
+  topic: flows
+  brokers:
+    - redpanda:9092
+  version: "3.3"
+
+inlet:
+  flow:
+    inputs:
+      - type: udp
+        listen: 0.0.0.0:6343
+        decoder: sflow
+      - type: udp
+        listen: 0.0.0.0:2055
+        decoder: netflow

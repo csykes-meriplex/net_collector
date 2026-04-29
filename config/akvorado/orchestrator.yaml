@@ -1,0 +1,13 @@
+http:
+  listen: 0.0.0.0:8080
+
+kafka:
+  topic: flows
+  brokers:
+    - redpanda:9092
+  version: "3.3"
+
+clickhouse:
+  servers:
+    - clickhouse:9000
+  database: flows

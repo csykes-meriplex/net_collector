@@ -1,0 +1,15 @@
+http:
+  listen: 0.0.0.0:8080
+
+clickhouse:
+  servers:
+    - clickhouse:9000
+  database: flows
+
+console:
+  default-visualize-options:
+    start: -1d
+    end: now
+    dimensions:
+      - SrcAS
+      - DstAS

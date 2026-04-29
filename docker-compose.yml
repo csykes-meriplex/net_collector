@@ -324,14 +324,14 @@ services:
     image: ghcr.io/akvorado/akvorado:latest
     container_name: akvorado-orchestrator
     restart: unless-stopped
-    command: orchestrator /etc/akvorado/akvorado.yaml
+    command: orchestrator /etc/akvorado/orchestrator.yaml
     depends_on:
       clickhouse:
         condition: service_healthy
       redpanda:
         condition: service_healthy
     volumes:
-      - ./config/akvorado/akvorado.yaml:/etc/akvorado/akvorado.yaml:ro
+      - ./config/akvorado:/etc/akvorado:ro
     networks:
       - backend
 
@@ -340,14 +340,14 @@ services:
     image: ghcr.io/akvorado/akvorado:latest
     container_name: akvorado-inlet
     restart: unless-stopped
-    command: inlet /etc/akvorado/akvorado.yaml
+    command: inlet /etc/akvorado/inlet.yaml
     depends_on:
       - akvorado-orchestrator
     ports:
       - "6343:6343/udp"
       - "2055:2055/udp"
     volumes:
-      - ./config/akvorado/akvorado.yaml:/etc/akvorado/akvorado.yaml:ro
+      - ./config/akvorado:/etc/akvorado:ro
     networks:
       - backend
 
@@ -356,11 +356,11 @@ services:
     image: ghcr.io/akvorado/akvorado:latest
     container_name: akvorado-console
     restart: unless-stopped
-    command: console /etc/akvorado/akvorado.yaml
+    command: console /etc/akvorado/console.yaml
     depends_on:
       - akvorado-orchestrator
     volumes:
-      - ./config/akvorado/akvorado.yaml:/etc/akvorado/akvorado.yaml:ro
+      - ./config/akvorado:/etc/akvorado:ro
     networks:
       - backend
 
