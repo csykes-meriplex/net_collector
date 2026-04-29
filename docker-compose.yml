@@ -216,9 +216,8 @@ services:
     env_file: .env
     volumes:
       - ./config/oxidized:/oxidized-config
+    entrypoint: ["/bin/bash", "-c"]
     command:
-      - bash
-      - -c
       - |
         mysql -h mariadb -u librenms -p"$$DB_PASSWORD" librenms \
           -e "INSERT IGNORE INTO api_tokens (user_id, token_hash, description, disabled)
