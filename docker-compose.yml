@@ -304,7 +304,7 @@ services:
     image: ghcr.io/akvorado/akvorado:latest
     container_name: akvorado
     restart: unless-stopped
-    command: orchestrate /etc/akvorado/akvorado.yaml
+    command: orchestrator /etc/akvorado/akvorado.yaml
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -329,7 +329,7 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
-      GF_INSTALL_PLUGINS: grafana-worldmap-panel,akvorado-datasource
+      GF_INSTALL_PLUGINS: grafana-worldmap-panel
       INFLUXDB_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
       INFLUXDB_ORG: ${INFLUXDB_ORG:-netcollector}
     volumes:
