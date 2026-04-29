@@ -219,7 +219,7 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        mysql -h mariadb -u librenms -p"$$DB_PASSWORD" librenms \
+        mariadb -h mariadb -u librenms -p"$$DB_PASSWORD" librenms \
           -e "INSERT IGNORE INTO api_tokens (user_id, token_hash, description, disabled)
               VALUES (1, '$$OXIDIZED_API_TOKEN', 'oxidized', 0);" && \
         sed -i "s|LIBRENMS_API_TOKEN_PLACEHOLDER|$$OXIDIZED_API_TOKEN|g" \
